@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wikilinks</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ───────────────────────────── SETUP ───────────────────────────── -->
+<section id="setup" class="screen">
+  <div class="setup-box">
+    <div id="resumeBox" class="resume hidden">
+      <div id="resumeText"></div>
+      <div class="resume-actions">
+        <button id="resumeBtn" class="primary">Resume game</button>
+        <button id="discardBtn" class="ghost">Discard</button>
+      </div>
+    </div>
+
+    <h1>WIKI<span>LINKS</span></h1>
+    <p class="tag">Get from one article to the other using only links. Shout <b>Linked!</b></p>
+
+    <div class="field">
+      <label>Players <small>up to 6</small></label>
+      <div id="players"></div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="rounds">Rounds</label>
+        <select id="rounds">
+          <option>3</option><option selected>5</option><option>7</option><option>10</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="limit">Time limit</label>
+        <select id="limit">
+          <option value="3">3 min</option>
+          <option value="5" selected>5 min</option>
+          <option value="10">10 min</option>
+          <option value="0">none</option>
+        </select>
+      </div>
+      <div class="field grow">
+        <label>Difficulty</label>
+        <div class="segmented" id="difficulty">
+          <button data-d="easy" class="on">Easy<small>≤ 5 links</small></button>
+          <button data-d="medium">Medium<small>6–8 links</small></button>
+          <button data-d="hard">Hard<small>9–19 links</small></button>
+        </div>
+      </div>
+    </div>
+
+    <button id="start" class="primary big">Start game</button>
+    <p class="hint" id="setupHint"></p>
+  </div>
+</section>
+
+<!-- ───────────────────────────── GAME ───────────────────────────── -->
+<section id="game" class="screen hidden">
+  <header id="bar">
+    <div class="bar-left">
+      <span class="round-pill">Round <b id="rn">1</b><i>/</i><span id="rt">5</span></span>
+      <span class="diff-pill" id="diffPill">EASY</span>
+    </div>
+    <div id="clock">0:00.0</div>
+    <div class="bar-right">
+      <div id="scores"></div>
+      <button id="newGame" class="ghost tiny">New game</button>
+    </div>
+  </header>
+
+  <main id="panels">
+    <article class="panel" id="pStart">
+      <div class="phead">
+        <span class="plabel start">START</span>
+        <h2 class="ptitle">…</h2>
+        <div class="pmeta"><code class="pslug"></code><a class="popen" target="_blank" rel="noopener">open ↗</a></div>
+      </div>
+      <div class="excerpt"></div>
+    </article>
+
+    <div id="arrow" aria-hidden="true"><span>→</span></div>
+
+    <article class="panel" id="pFinish">
+      <div class="phead">
+        <span class="plabel finish">FINISH</span>
+        <h2 class="ptitle">…</h2>
+        <div class="pmeta"><code class="pslug"></code><a class="popen" target="_blank" rel="noopener">open ↗</a></div>
+      </div>
+      <div class="excerpt"></div>
+    </article>
+  </main>
+
+  <footer id="controls">
+    <!-- phase: ready (clock not started yet) -->
+    <div class="phase hidden" id="phReady">
+      <div class="ready-head">Everyone open <b id="readyTitle">…</b> on your phones — the clock starts when you're all set.</div>
+      <div class="ready-url"><code id="readyUrl"></code></div>
+      <button id="startRound" class="primary huge go">Start round</button>
+    </div>
+
+    <!-- phase: running -->
+    <div class="phase" id="phRunning">
+      <button id="linked" class="primary huge">LINKED!</button>
+      <button id="giveup" class="ghost">Nobody got it</button>
+    </div>
+
+    <!-- phase: who -->
+    <div class="phase hidden" id="phWho">
+      <span class="ask">Who got it?</span>
+      <div id="whoButtons" class="who"></div>
+      <button id="whoCancel" class="ghost">← resume clock</button>
+    </div>
+
+    <!-- phase: verify -->
+    <div class="phase hidden" id="phVerify">
+      <div class="verify-head">
+        <b id="claimant"></b> claimed it in <b id="claimTime"></b> — type the path to confirm
+      </div>
+      <textarea id="pathInput" rows="2" spellcheck="false"
+        placeholder="Battle of Vigo Bay, Spain, Madrid …   — comma separated, or one article per line if a title contains a comma. Start and finish optional."></textarea>
+      <div class="verify-actions">
+        <button id="doVerify" class="primary">Verify path</button>
+        <button id="skipVerify" class="ghost">Award without checking</button>
+        <button id="wrongPerson" class="ghost">Someone else</button>
+      </div>
+      <div id="verdict"></div>
+    </div>
+
+    <!-- phase: between rounds -->
+    <div class="phase hidden" id="phNext">
+      <div id="roundSummary"></div>
+      <button id="nextRound" class="primary big">Next round →</button>
+      <button id="reveal" class="ghost">Reveal a shortest path</button>
+      <div id="revealed"></div>
+    </div>
+
+    <!-- phase: nobody got it -> step through the answer -->
+    <div class="phase hidden" id="phReveal">
+      <div class="expired-head" id="revealHead">Nobody linked it.</div>
+      <div class="verify-actions">
+        <button id="revealStart" class="primary big">Reveal?</button>
+        <button id="revealNext" class="primary big hidden">Next →</button>
+        <button id="skipReveal" class="ghost">Skip to next round</button>
+      </div>
+      <div id="walkChain" class="chain"></div>
+      <div id="afterReveal" class="hidden">
+        <button id="nextFromReveal" class="primary big">Next round →</button>
+      </div>
+    </div>
+
+    <!-- phase: final -->
+    <div class="phase hidden" id="phFinal">
+      <div id="finalText"></div>
+      <button id="again" class="primary big">Play again</button>
+    </div>
+  </footer>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

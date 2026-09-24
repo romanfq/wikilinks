@@ -1,0 +1,9 @@
+# Wikipedia SQL dumps (~150 MB) — re-downloadable with ./setup.sh
+data/
+
+# Generated graph (~23 MB) — rebuildable, but small enough to ship if you like
+build/
+
+__pycache__/
+*.pyc
+.DS_Store
