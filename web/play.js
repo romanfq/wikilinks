@@ -1,6 +1,5 @@
 'use strict';
 const $ = s => document.querySelector(s);
-const JOINED_KEY = 'wikilinks.joined';
 
 $('#joinBtn').addEventListener('click', join);
 $('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
@@ -24,7 +23,6 @@ async function join() {
     $('#joinBtn').disabled = false;
     return;
   }
-  try { localStorage.setItem(JOINED_KEY, '1'); } catch {}
   enterWaitRoom();
 }
 
@@ -33,6 +31,16 @@ function enterWaitRoom() {
   $('#wait').classList.remove('hidden');
   poll();
 }
+
+// If this browser's session cookie still names a real player on the current
+// server (e.g. we're just back from a finished round, not a fresh visit or
+// a server restart that wiped the roster), skip straight to the wait room
+// instead of asking for the name again.
+(async function checkExistingSession() {
+  let r;
+  try { r = await (await fetch('/api/me')).json(); } catch { return; }
+  if (r && r.joined) enterWaitRoom();
+})();
 
 async function poll() {
   let r;
@@ -49,6 +57,3 @@ async function poll() {
   setTimeout(poll, 1000);
 }
 
-// A previous join in this browser already carries the session cookie —
-// skip straight to the wait room instead of asking for the name again.
-try { if (localStorage.getItem(JOINED_KEY)) enterWaitRoom(); } catch {}

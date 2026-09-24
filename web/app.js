@@ -37,8 +37,6 @@ $('#difficulty').addEventListener('click', e => {
   S.difficulty = b.dataset.d;
 });
 
-function esc_wifi(s) { return s.replace(/([\\;,":])/g, '\\$1'); }
-
 let lastBaseUrl = null;
 async function refreshJoinQrs() {
   // Re-fetched every call (not cached) so that starting `ngrok http <port>`
@@ -53,19 +51,7 @@ async function refreshJoinQrs() {
     $('#gameQr').src = '/api/qr?text=' + encodeURIComponent(gameUrl);
     $('#joinUrl').textContent = gameUrl + (info && info.via_ngrok ? '  (via ngrok — works off your Wi-Fi too)' : '');
   }
-
-  const ssid = $('#wifiSsid').value.trim();
-  if (ssid) {
-    const pass = $('#wifiPass').value;
-    const wifiText = `WIFI:S:${esc_wifi(ssid)};T:${pass ? 'WPA' : 'nopass'};P:${esc_wifi(pass)};;`;
-    $('#wifiQr').src = '/api/qr?text=' + encodeURIComponent(wifiText);
-    $('#wifiQrCard').classList.remove('hidden');
-  } else {
-    $('#wifiQrCard').classList.add('hidden');
-  }
 }
-$('#wifiSsid').addEventListener('input', refreshJoinQrs);
-$('#wifiPass').addEventListener('input', refreshJoinQrs);
 refreshJoinQrs();
 
 function renderJoinedList(players) {
@@ -235,7 +221,12 @@ $('#startRound').addEventListener('click', async () => {
   $('#clock').classList.remove('idle');
   phase('phRunning');
   clockStart();
-  try { await fetch('/api/start-round', { method: 'POST' }); } catch {}
+  try {
+    await fetch('/api/start-round', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit_ms: S.limitMs })
+    });
+  } catch {}
 });
 
 /* ───────────────────── live tracking (replaces shout + type-route) ───────────────────── */

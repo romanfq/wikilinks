@@ -62,7 +62,6 @@ class _Rewriter(HTMLParser):
     # (matters mainly for the only_content=False fallback, since a real
     # #mw-content-text container shouldn't contain these anyway).
     _SKIP_TAGS = {'html', 'head', 'body'}
-    _SUPPRESS_DATA = {'script', 'style', 'title'}
 
     def __init__(self, wiki_prefix, only_content=True):
         super().__init__(convert_charrefs=True)
@@ -73,7 +72,8 @@ class _Rewriter(HTMLParser):
         self.capturing = not only_content
         self.depth = 0
         self.found_container = not only_content
-        self.suppress = 0
+        self.drop = 0   # >0 while inside an element whose content must not render at all
+        self.raw = 0    # >0 while inside a <style> we're keeping verbatim (real CSS, not HTML)
 
     def _emit(self, tag, attrs, self_closing):
         if tag in self._SKIP_TAGS:
@@ -100,12 +100,23 @@ class _Rewriter(HTMLParser):
             return
         if tag not in _VOID and self.only_content:
             self.depth += 1
-        if tag in self._SUPPRESS_DATA:
-            self.suppress += 1
+        if tag == 'script' or tag == 'title':
+            self.drop += 1
+            return                              # never emit these or their content
+        if tag == 'style':
+            # TemplateStyles blocks are real, scoped CSS for infoboxes,
+            # navboxes, hide/show rules etc. — genuinely needed for the page
+            # to look right, so keep them verbatim in the normal path. Only
+            # drop them in the only_content=False fallback, where a <style>
+            # found this way is more likely stray page-chrome CSS anyway.
+            if self.only_content:
+                self.raw += 1
+            else:
+                self.drop += 1
         self._emit(tag, ad, self_closing=tag in _VOID)
 
     def handle_startendtag(self, tag, attrs):
-        if self.capturing:
+        if self.capturing and tag not in ('script', 'title'):
             self._emit(tag, dict(attrs), self_closing=True)
 
     def handle_endtag(self, tag):
@@ -116,14 +127,23 @@ class _Rewriter(HTMLParser):
             if self.depth < 0:
                 self.capturing = False          # closed the container itself
                 return
-        if tag in self._SUPPRESS_DATA and self.suppress > 0:
-            self.suppress -= 1
+        if tag == 'script' or tag == 'title':
+            if self.drop > 0:
+                self.drop -= 1
+            return
+        if tag == 'style':
+            if self.only_content:
+                if self.raw > 0:
+                    self.raw -= 1
+            elif self.drop > 0:
+                self.drop -= 1
         if tag not in self._SKIP_TAGS:
             self.out.append(f'</{tag}>')
 
     def handle_data(self, data):
-        if self.capturing and self.suppress == 0:
-            self.out.append(_esc(data))
+        if not self.capturing or self.drop > 0:
+            return
+        self.out.append(data if self.raw > 0 else _esc(data))
 
 
 class ZimContent:

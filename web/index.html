@@ -15,24 +15,8 @@
     <p class="tag">Get from one article to the other using only links.</p>
 
     <div class="field">
-      <label>Wi-Fi to join <small>optional — renders a scannable Wi-Fi QR so nobody has to read a password aloud</small></label>
-      <div class="row">
-        <input id="wifiSsid" placeholder="Network name (SSID)">
-        <input id="wifiPass" placeholder="Password" type="text">
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Scan to join</label>
-      <div class="joinQrs">
-        <div class="qrCard" id="wifiQrCard">
-          <div class="qrTitle">Wi-Fi</div>
-          <img id="wifiQr" alt="Wi-Fi join QR code">
-        </div>
-        <div class="qrCard">
-          <div class="qrTitle">Game</div>
-          <img id="gameQr" alt="Game join QR code">
-        </div>
+      <div class="gameQrCard">
+        <img id="gameQr" alt="Scan to join the game">
       </div>
       <div class="small" id="joinUrl"></div>
     </div>

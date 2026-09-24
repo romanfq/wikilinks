@@ -12,6 +12,10 @@ Endpoints:
   POST /api/end-round                           -> stops tracking the round
   POST /api/join   {name}                       -> registers a player, sets
                                                     a session cookie
+  GET  /api/me                                   -> whether this session's
+                                                    cookie still names a real
+                                                    player (survives a round
+                                                    ending, not a restart)
   POST /api/award  {token}                      -> manual point override
   POST /api/new-game                            -> resets scores/round
   GET  /api/live                                -> current round + roster
@@ -128,6 +132,8 @@ class GameState:
         self.start = None             # card dict
         self.finish = None            # card dict
         self.winner = None            # token of this round's winner, once decided
+        self.limit_ms = 0             # 0 = no time limit
+        self.started_at = None        # time.time() when start_round() was called
         self.players = {}             # token -> {name, pts, hops, arrived_at}
 
     def join(self, name):
@@ -139,19 +145,29 @@ class GameState:
             }
         return token
 
+    def player_name(self, token):
+        """The joined name for a session token, or None if it isn't (or is
+        no longer, e.g. after a server restart wiped in-memory state) valid."""
+        with self.lock:
+            p = self.players.get(token)
+            return p['name'] if p else None
+
     def reset_round(self, start, finish):
         with self.lock:
             self.round += 1
             self.phase = 'waiting'
             self.start, self.finish = start, finish
             self.winner = None
+            self.started_at = None
             for p in self.players.values():
                 p['hops'] = 0
                 p['arrived_at'] = None
 
-    def start_round(self):
+    def start_round(self, limit_ms=0):
         with self.lock:
             self.phase = 'running'
+            self.limit_ms = max(0, int(limit_ms or 0))
+            self.started_at = time.time()
 
     def end_round(self):
         with self.lock:
@@ -192,10 +208,15 @@ class GameState:
 
     def snapshot(self):
         with self.lock:
+            remaining_ms = None
+            if self.phase == 'running' and self.started_at and self.limit_ms:
+                elapsed_ms = (time.time() - self.started_at) * 1000
+                remaining_ms = max(0, int(self.limit_ms - elapsed_ms))
             return {
                 'phase': self.phase, 'round': self.round,
                 'start': self.start, 'finish': self.finish,
                 'winner_token': self.winner,
+                'limit_ms': self.limit_ms, 'remaining_ms': remaining_ms,
                 'players': [{'token': t, 'name': p['name'], 'pts': p['pts'],
                              'hops': p['hops'], 'arrived': p['arrived_at'] is not None}
                             for t, p in self.players.items()],
@@ -355,7 +376,8 @@ class Handler(BaseHTTPRequestHandler):
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{art["title"].replace("_", " ")}</title>'
             '<link rel="stylesheet" href="/wiki.css"></head>'
-            f'<body>{banner}<article>{art["html"]}</article></body></html>'
+            f'<body>{banner}<article>{art["html"]}</article>'
+            f'<script src="/wiki.js"></script></body></html>'
         )
         return self._send(200, page, 'text/html; charset=utf-8')
 
@@ -377,6 +399,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {'path': p})
         if u.path == '/api/live':
             return self._send(200, GAME.snapshot())
+        if u.path == '/api/me':
+            name = GAME.player_name(self._player_token() or '')
+            return self._send(200, {'joined': name is not None, 'name': name})
         if u.path == '/api/host-info':
             tunnel = ngrok_url()
             base = tunnel if tunnel else f'http://{lan_ip()}:{PORT}'
@@ -409,7 +434,8 @@ class Handler(BaseHTTPRequestHandler):
                                extra_headers=[('Set-Cookie',
                                    f'pid={token}; Path=/; HttpOnly; SameSite=Lax')])
         if path == '/api/start-round':
-            GAME.start_round()
+            body = self._body()
+            GAME.start_round(body.get('limit_ms', 0))
             return self._send(200, {'ok': True})
         if path == '/api/end-round':
             GAME.end_round()
