@@ -156,6 +156,21 @@ h1 span{color:var(--accent)}
 .plabel.walking{background:rgba(77,163,255,.16);color:var(--accent)}
 .limit-pill{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);color:var(--faint)}
 
+/* ───── join (v1.2: Wi-Fi/game QR, joined roster, live board) ───── */
+.primary:disabled{opacity:.5;cursor:not-allowed}
+.joinQrs{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:10px 0}
+.qrCard{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:center}
+.qrTitle{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.qrCard img{width:140px;height:140px;display:block;border-radius:6px;background:#fff}
+.joined{display:flex;flex-wrap:wrap;gap:6px;min-height:32px}
+.joinedTag{background:var(--panel-2);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:13px}
+.liveBoard{width:100%;display:flex;flex-direction:column;gap:8px;max-width:640px}
+.boardRow{display:flex;align-items:center;gap:12px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:9px;padding:8px 12px}
+.boardRow.arrived{border-color:var(--good);background:rgba(63,185,80,.10)}
+.boardRow .bname{flex:1;font-weight:600}
+.boardRow .bhops{color:var(--dim);font-size:13px;font-variant-numeric:tabular-nums}
+
 @media (max-width:900px){
   #panels{flex-direction:column;gap:12px}
   #arrow{flex:0 0 auto;transform:rotate(90deg)}

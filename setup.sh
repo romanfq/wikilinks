@@ -28,5 +28,18 @@ echo "==> Building the link graph"
 python3 build_graph.py
 python3 build_redirects.py
 
+echo "==> Downloading article content (~990 MB, one-time)"
+ZIM=data/wikipedia.zim
+if [ -s "$ZIM" ]; then
+  echo "    $ZIM already present, skipping"
+else
+  # Kiwix doesn't publish a stable "latest" alias the way Wikimedia's dumps
+  # do, so this filename is pinned to the current release. If it 404s, find
+  # the current one at https://library.kiwix.org (search "simple english
+  # wikipedia", nopic variant) and update the URL below.
+  curl -fL --progress-bar -o "$ZIM" \
+    "https://download.kiwix.org/zim/wikipedia/wikipedia_en-simple_all_nopic_2026-06.zim"
+fi
+
 echo
 echo "Done. Start the game with:  python3 server.py"
