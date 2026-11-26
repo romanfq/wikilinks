@@ -1,0 +1,54 @@
+/* Styling for ZIM-served article pages (server.py's /wiki/<title>) — kept
+   separate from style.css since these pages are plain navigated-to documents,
+   not part of the single-page app. */
+:root{ --bg:#0e1116; --panel:#161b23; --line:#262d38; --ink:#e6edf6; --dim:#8b97a8; --accent:#4da3ff; --good:#3fb950; --gold:#e3b341; --bad:#f85149; }
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Georgia,serif;
+}
+article{max-width:720px;margin:0 auto;padding:16px 18px 60px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+img{max-width:100%;height:auto}
+table:not(.infobox){max-width:100%;overflow-x:auto;display:block;border-collapse:collapse}
+.infobox{max-width:100%}
+h1,h2,h3{line-height:1.25}
+
+/* Real per-template CSS ("TemplateStyles") ships inline with the ZIM content
+   and is preserved as-is (see zimcontent.py) because infoboxes and hide/show
+   rules depend on it — but navboxes/side-boxes hardcode light-mode colors
+   with color:inherit, which would pull in our dark theme's light text on
+   top of their light background. Force those specific known classes back to
+   the dark palette; !important is safe here since none of MediaWiki's own
+   light-mode rules for these use it. */
+.navbox, .navbox-subgroup, .side-box, .sistersitebox,
+.navbox-title, .navbox-group, .navbox-abovebelow, .navbox-even, .navbox-odd{
+  background:var(--panel) !important; color:var(--ink) !important; border-color:var(--line) !important;
+}
+.wl-banner{
+  position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);
+  color:var(--dim);padding:10px 16px;font-size:14px;text-align:center;
+}
+.wl-banner b{color:var(--ink)}
+.wl-banner.wl-win{background:rgba(63,185,80,.18);color:var(--good);font-weight:700}
+.wl-timer{font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
+.wl-timer.wl-yellow{color:var(--gold)}
+.wl-timer.wl-red{color:var(--bad)}
+
+/* Non-blocking — sits at the bottom, click it whenever; never intercepts
+   taps on the article above it (no backdrop, no full-viewport overlay). */
+.wl-endbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:var(--panel);border-top:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  padding:10px 16px;box-shadow:0 -6px 20px rgba(0,0,0,.35);
+  flex-wrap:wrap;
+}
+.wl-endbar-text{font-size:14px;color:var(--dim)}
+.wl-endbar-btn{
+  font:inherit;cursor:pointer;border:0;border-radius:8px;
+  padding:8px 16px;font-size:14px;font-weight:700;
+  background:linear-gradient(180deg,#5cb0ff,#2f86e8);color:#04101c;
+}
+.wl-endbar-btn:active{transform:translateY(1px)}

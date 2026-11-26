@@ -1,46 +1,79 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const S = {
-  players: [], rounds: 5, difficulty: 'easy',
+  rounds: 5, difficulty: 'easy', limitMs: 300000,
   round: 0, puzzle: null,
-  t0: 0, elapsed: 0, running: false, raf: null, claim: null, lastChain: null,
-  limitMs: 300000, gen: 0, walk: null
+  t0: 0, elapsed: 0, running: false, raf: null,
+  gen: 0, walk: null, awarded: false, live: null
 };
 
-/* ─────────────────────────── setup ─────────────────────────── */
-const seats = $('#players');
-for (let i = 0; i < 6; i++) {
-  const inp = document.createElement('input');
-  inp.placeholder = `Player ${i + 1}`;
-  inp.maxLength = 18;
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter') $('#start').click(); });
-  seats.appendChild(inp);
+/* ─────────────────────────── settings persistence ─────────────────────────── */
+// Only host preferences are remembered — scores/round/puzzle live on the
+// server now (see GameState in server.py) and survive a shared-screen
+// reload on their own; there's nothing left here to "resume".
+const PREF_KEY = 'wikilinks.prefs';
+function savePrefs() {
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ rounds: S.rounds, difficulty: S.difficulty, limitMs: S.limitMs })); } catch {}
 }
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREF_KEY) || 'null');
+    if (!p) return;
+    S.difficulty = p.difficulty || S.difficulty;
+    $$('#difficulty button').forEach(x => x.classList.toggle('on', x.dataset.d === S.difficulty));
+    if (p.rounds) $('#rounds').value = p.rounds;
+    if (p.limitMs != null) $('#limit').value = String(p.limitMs / 60000);
+  } catch {}
+}
+loadPrefs();
 
+/* ─────────────────────────── setup ─────────────────────────── */
 $('#difficulty').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   $$('#difficulty button').forEach(x => x.classList.toggle('on', x === b));
   S.difficulty = b.dataset.d;
 });
 
-$('#start').addEventListener('click', () => {
-  const names = $$('#players input').map(i => i.value.trim()).filter(Boolean);
-  if (names.length < 1) { $('#setupHint').textContent = 'Add at least one player.'; return; }
-  if (new Set(names.map(n => n.toLowerCase())).size !== names.length) {
-    $('#setupHint').textContent = 'Player names must be different.'; return;
+let lastBaseUrl = null;
+async function refreshJoinQrs() {
+  // Re-fetched every call (not cached) so that starting `ngrok http <port>`
+  // after this screen is already open still picks it up within a second or
+  // two, via the same poll loop that updates the joined-players list.
+  let info;
+  try { info = await (await fetch('/api/host-info')).json(); } catch { info = null; }
+  const base = info ? info.base_url : location.origin;
+  const gameUrl = `${base}/play`;
+  if (base !== lastBaseUrl) {
+    lastBaseUrl = base;
+    $('#gameQr').src = '/api/qr?text=' + encodeURIComponent(gameUrl);
+    $('#joinUrl').textContent = gameUrl + (info && info.via_ngrok ? '  (via ngrok — works off your Wi-Fi too)' : '');
   }
-  S.players = names.map(n => ({ name: n, pts: 0 }));
+}
+refreshJoinQrs();
+
+function renderJoinedList(players) {
+  $('#joinedCount').textContent = players.length;
+  $('#joinedList').innerHTML = players.map(p => `<span class="joinedTag">${esc(p.name)}</span>`).join('')
+    || '<span class="small">nobody yet — scan the Game QR above</span>';
+  const inSetup = !$('#setup').classList.contains('hidden');
+  if (inSetup) $('#start').disabled = players.length === 0;
+  $('#start').textContent = players.length === 0 ? 'Waiting for players…' : 'Start game';
+}
+
+$('#start').addEventListener('click', async () => {
+  if ($('#start').disabled) return;
   S.rounds = +$('#rounds').value;
   S.limitMs = (+$('#limit').value) * 60000;
   S.round = 0;
+  savePrefs();
   $('#rt').textContent = S.rounds;
   $('#diffPill').textContent = S.difficulty.toUpperCase();
   $('#setup').classList.add('hidden');
   $('#game').classList.remove('hidden');
-  renderScores();
-  saveGame();
+  try { await fetch('/api/new-game', { method: 'POST' }); } catch {}
   newRound();
 });
 
@@ -66,11 +99,12 @@ function expire() {
   c.textContent = fmt(S.limitMs);
   c.classList.remove('warning', 'stopped');
   c.classList.add('expired');
+  fetch('/api/end-round', { method: 'POST' }).catch(() => {});
   enterReveal("Time's up — nobody linked it.");
 }
-function clockStart(resume = false) {
-  S.t0 = performance.now() - (resume ? S.elapsed : 0);
-  if (!resume) S.elapsed = 0;
+function clockStart() {
+  S.t0 = performance.now();
+  S.elapsed = 0;
   S.running = true;
   $('#clock').classList.remove('stopped', 'expired', 'warning', 'idle');
   tick();
@@ -82,16 +116,15 @@ function clockStop() {
 }
 
 /* ─────────────────────────── round ─────────────────────────── */
-const PHASES = ['phReady', 'phRunning', 'phWho', 'phVerify', 'phNext', 'phReveal', 'phFinal'];
+const PHASES = ['phReady', 'phRunning', 'phNext', 'phReveal', 'phFinal'];
 const phase = id => PHASES.forEach(p => $('#' + p).classList.toggle('hidden', p !== id));
 
-function renderScores() {
-  const max = Math.max(0, ...S.players.map(p => p.pts));
-  $('#scores').innerHTML = S.players.map(p =>
+function renderScores(players) {
+  const max = Math.max(0, ...players.map(p => p.pts));
+  $('#scores').innerHTML = players.map(p =>
     `<span class="score${p.pts === max && max > 0 ? ' lead' : ''}">${esc(p.name)}<b class="pts">${p.pts}</b></span>`
   ).join('');
 }
-const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function fillPanel(sel, card) {
   const el = $(sel);
@@ -140,18 +173,16 @@ async function loadExcerpt(panel, slug) {
 }
 
 function resetRoundUI() {
-  S.claim = null;
-  S.lastChain = null;
   S.walk = null;
+  S.awarded = false;
   S.gen++;
   const lab = $('#pStart .plabel');
   lab.textContent = 'START'; lab.className = 'plabel start';
   $('#rn').textContent = S.round;
-  $('#verdict').innerHTML = ''; $('#revealed').innerHTML = ''; $('#pathInput').value = '';
+  $('#revealed').innerHTML = '';
+  $('#liveBoard').innerHTML = '';
   phase('phReady');
   $('#startRound').disabled = true;
-  $('#readyTitle').textContent = '…';
-  $('#readyUrl').textContent = '';
   const clk = $('#clock');
   clk.textContent = '0:00.0';
   clk.classList.remove('stopped', 'expired', 'warning');
@@ -162,8 +193,6 @@ function showPuzzle(p) {
   S.puzzle = p;
   fillPanel('#pStart', p.start);
   fillPanel('#pFinish', p.finish);
-  $('#readyTitle').textContent = p.start.title;
-  $('#readyUrl').textContent = p.start.url;
   $('#startRound').disabled = false;
 }
 
@@ -171,7 +200,6 @@ async function newRound() {
   S.round++;
   S.puzzle = null;
   resetRoundUI();
-  saveGame();
   for (const s of ['#pStart', '#pFinish']) {
     $(s).querySelector('.ptitle').textContent = 'finding a challenge…';
     $(s).querySelector('.excerpt').innerHTML = '';
@@ -186,89 +214,75 @@ async function newRound() {
     return;
   }
   showPuzzle(p);
-  saveGame();                       // store the challenge, so a reload keeps it
 }
 
-$('#startRound').addEventListener('click', () => {
+$('#startRound').addEventListener('click', async () => {
   if ($('#startRound').disabled) return;
   $('#clock').classList.remove('idle');
   phase('phRunning');
   clockStart();
+  try {
+    await fetch('/api/start-round', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit_ms: S.limitMs })
+    });
+  } catch {}
 });
 
-/* ─────────────────────── linked / claiming ─────────────────────── */
-$('#linked').addEventListener('click', () => {
-  if (!S.running) return;
+/* ───────────────────── live tracking (replaces shout + type-route) ───────────────────── */
+function renderBoard(players) {
+  $('#liveBoard').innerHTML = players.map(p => `
+    <div class="boardRow${p.arrived ? ' arrived' : ''}">
+      <span class="bname">${esc(p.name)}</span>
+      <span class="bhops">${p.hops} link${p.hops === 1 ? '' : 's'}</span>
+      <button class="ghost tiny award" data-token="${esc(p.token)}">Award</button>
+    </div>`).join('') || '<div class="small">Nobody joined this round.</div>';
+}
+$('#liveBoard').addEventListener('click', e => {
+  const b = e.target.closest('.award'); if (!b) return;
+  fetch('/api/award', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: b.dataset.token })
+  }).catch(() => {});
+});
+
+function onRoundWon(w) {
+  if (S.awarded) return;
+  S.awarded = true;
   clockStop();
-  S.claim = { ms: S.elapsed, who: null };
-  $('#whoButtons').innerHTML = S.players.map((p, i) =>
-    `<button data-i="${i}">${i + 1}. ${esc(p.name)}</button>`).join('');
-  phase('phWho');
-});
-$('#whoCancel').addEventListener('click', () => { phase('phRunning'); clockStart(true); });
-$('#whoButtons').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (b) pickWinner(+b.dataset.i);
-});
-function pickWinner(i) {
-  S.claim.who = i;
-  $('#claimant').textContent = S.players[i].name;
-  $('#claimTime').textContent = fmt(S.claim.ms);
-  $('#verdict').innerHTML = '';
-  phase('phVerify');
-  $('#pathInput').focus();
+  $('#roundSummary').innerHTML =
+    `<div class="won"><b>${esc(w.name)}</b> takes round ${S.round} in ${fmt(S.elapsed)}` +
+    ` — ${w.hops} link${w.hops === 1 ? '' : 's'}</div>`;
+  phase('phNext');
 }
 
 $('#giveup').addEventListener('click', () => {
   clockStop();
+  fetch('/api/end-round', { method: 'POST' }).catch(() => {});
   enterReveal('Nobody got it.');
 });
 
-/* ─────────────────────────── verify ─────────────────────────── */
-$('#doVerify').addEventListener('click', async () => {
-  const body = {
-    start: S.puzzle.start.slug, finish: S.puzzle.finish.slug,
-    path: $('#pathInput').value
-  };
-  $('#verdict').innerHTML = '<div class="small">checking…</div>';
+/* ───────────────────────────── polling ───────────────────────────── */
+async function pollLive() {
   let r;
-  try {
-    r = await (await fetch('/api/verify', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })).json();
-  } catch { $('#verdict').innerHTML = '<div class="msg no">Engine unreachable.</div>'; return; }
-
-  if (r.error) { $('#verdict').innerHTML = `<div class="msg no">${esc(r.error)}</div>`; return; }
-
-  const chain = r.steps.map((s, i) =>
-    `<span class="hop ${s.ok ? 'ok' : 'no'}">` +
-    (i === 0 ? `<span class="n">${esc(s.from)}</span>` : '') +
-    `<span class="lk">${s.ok ? '→' : '⊘'}</span><span class="n">${esc(s.to)}</span></span>`).join('');
-  $('#verdict').innerHTML =
-    `<div class="chain">${chain}</div>` +
-    (r.ok
-      ? `<div class="msg ok">Valid path — ${r.hops} link${r.hops > 1 ? 's' : ''}. Point to ${esc(S.players[S.claim.who].name)}.</div>`
-      : `<div class="msg no">Broken link marked ⊘ — no point yet. Fix the path and verify again.</div>`) +
-    ((r.corrections && r.corrections.length)
-      ? `<div class="small corr">read ` + r.corrections.map(c =>
-          `“${esc(c.typed)}” as <b>${esc(c.resolved)}</b>`).join(', ') + `</div>`
-      : '');
-  if (r.ok) { S.lastChain = chain; setTimeout(() => award(S.claim.who, r.hops), 1800); }
-});
-
-$('#skipVerify').addEventListener('click', () => { S.lastChain = null; award(S.claim.who, null); });
-$('#wrongPerson').addEventListener('click', () => phase('phWho'));
-
-function award(i, hops) {
-  S.players[i].pts++;
-  renderScores();
-  saveGame();
-  $('#roundSummary').innerHTML =
-    `<div class="won"><b>${esc(S.players[i].name)}</b> takes round ${S.round} in ${fmt(S.claim.ms)}` +
-    (hops ? ` — ${hops} links` : '') + `</div>` +
-    (S.lastChain ? `<div class="chain">${S.lastChain}</div>` : '');
-  phase('phNext');
+  try { r = await (await fetch('/api/live')).json(); } catch { return; }
+  S.live = r;
+  if (!$('#setup').classList.contains('hidden')) {
+    renderJoinedList(r.players);
+    refreshJoinQrs();
+    return;
+  }
+  if (!$('#phRunning').classList.contains('hidden')) {
+    renderBoard(r.players);
+    if (r.winner_token) {
+      const w = r.players.find(p => p.token === r.winner_token);
+      if (w) onRoundWon(w);
+    }
+  }
+  renderScores(r.players);
 }
+setInterval(pollLive, 1000);
+pollLive();
 
 /* ───────────────────── next round / reveal / final ───────────────────── */
 $('#nextRound').addEventListener('click', () => {
@@ -289,10 +303,10 @@ $('#reveal').addEventListener('click', async () => {
 
 function finish() {
   clockStop();
-  clearSave();
-  const max = Math.max(...S.players.map(p => p.pts));
-  const champs = S.players.filter(p => p.pts === max);
-  const table = [...S.players].sort((a, b) => b.pts - a.pts)
+  const players = (S.live && S.live.players) || [];
+  const max = Math.max(0, ...players.map(p => p.pts));
+  const champs = players.filter(p => p.pts === max);
+  const table = [...players].sort((a, b) => b.pts - a.pts)
     .map(p => `<span class="score${p.pts === max ? ' lead' : ''}">${esc(p.name)}<b class="pts">${p.pts}</b></span>`).join(' ');
   $('#finalText').innerHTML =
     `<h2 class="champ">${champs.length > 1 ? 'Tied: ' : ''}${champs.map(c => esc(c.name)).join(' & ')}</h2>` +
@@ -303,19 +317,14 @@ $('#again').addEventListener('click', () => {
   $('#game').classList.add('hidden');
   $('#setup').classList.remove('hidden');
   $('#setupHint').textContent = '';
-  offerResume();
 });
 
 /* ─────────────────────────── keyboard ─────────────────────────── */
 document.addEventListener('keydown', e => {
   if ($('#game').classList.contains('hidden')) return;
   const typing = ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName);
-  if (e.code === 'Space' && !typing) {
-    if (S.running) { e.preventDefault(); $('#linked').click(); }
-    else if (!$('#phReady').classList.contains('hidden')) { e.preventDefault(); $('#startRound').click(); }
-  }
-  if (!$('#phWho').classList.contains('hidden') && /^[1-6]$/.test(e.key)) {
-    const i = +e.key - 1; if (i < S.players.length) pickWinner(i);
+  if (e.code === 'Space' && !typing && !$('#phReady').classList.contains('hidden')) {
+    e.preventDefault(); $('#startRound').click();
   }
   if (e.key === 'Enter' && !$('#phNext').classList.contains('hidden')) $('#nextRound').click();
   if (!$('#phReveal').classList.contains('hidden') && (e.key === 'Enter' || e.code === 'Space') && !typing) {
@@ -327,7 +336,7 @@ document.addEventListener('keydown', e => {
   }
 });
 
-/* ─────────── nobody got it: step through the answer, one click at a time ─────────── */
+/* ───────────── nobody got it: step through the answer, one click at a time ─────────── */
 function enterReveal(headline) {
   S.walk = null;
   $('#revealHead').textContent = headline;
@@ -395,59 +404,4 @@ $('#newGame').addEventListener('click', () => {
   $('#game').classList.add('hidden');
   $('#setup').classList.remove('hidden');
   $('#setupHint').textContent = '';
-  offerResume();
 });
-
-/* ───────────── keep the game across reloads ───────────── */
-const SAVE_KEY = 'wikilinks.save';
-
-function saveGame() {
-  try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({
-      players: S.players, rounds: S.rounds, difficulty: S.difficulty,
-      limitMs: S.limitMs, round: S.round, puzzle: S.puzzle
-    }));
-  } catch {}
-}
-function readSave() {
-  try {
-    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    return (s && Array.isArray(s.players) && s.players.length && s.round <= s.rounds) ? s : null;
-  } catch { return null; }
-}
-function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch {} }
-
-function offerResume() {
-  const s = readSave();
-  if (!s) { $('#resumeBox').classList.add('hidden'); return; }
-  $('#resumeText').innerHTML =
-    `Game in progress — round ${Math.max(1, s.round)} of ${s.rounds}, ${s.difficulty}. ` +
-    s.players.map(p => `${esc(p.name)} <b>${p.pts}</b>`).join(' · ') +
-    (s.puzzle && s.puzzle.start
-      ? `<div class="small" style="margin-top:4px">resumes ${esc(s.puzzle.start.title)} → ${esc(s.puzzle.finish.title)}</div>`
-      : '');
-  $('#resumeBox').classList.remove('hidden');
-}
-
-$('#resumeBtn').addEventListener('click', () => {
-  const s = readSave();
-  if (!s) return;
-  S.players = s.players; S.rounds = s.rounds;
-  S.difficulty = s.difficulty; S.limitMs = s.limitMs;
-  $('#rt').textContent = S.rounds;
-  $('#diffPill').textContent = S.difficulty.toUpperCase();
-  $('#setup').classList.add('hidden');
-  $('#game').classList.remove('hidden');
-  renderScores();
-  if (s.puzzle && s.puzzle.start && s.puzzle.finish) {
-    S.round = s.round;                       // same round, same challenge
-    resetRoundUI();
-    showPuzzle(s.puzzle);
-  } else {
-    S.round = Math.max(0, s.round - 1);      // older save: no challenge stored
-    newRound();
-  }
-});
-$('#discardBtn').addEventListener('click', () => { clearSave(); offerResume(); });
-
-offerResume();

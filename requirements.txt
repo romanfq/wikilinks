@@ -4,6 +4,10 @@
 # breadth-first search is fully vectorised, which is what keeps puzzle
 # generation at roughly 100 ms on a 13-million-edge graph.
 #
-# Everything else (HTTP server, SQL-dump parsing, gzip, fuzzy matching) uses
+# libzim reads the local Kiwix ZIM archive that article pages are served
+# from in v1.2+ (see zimcontent.py) — prebuilt wheels, no system package.
+#
+# Everything else (HTTP server, SQL-dump parsing, gzip, QR rendering) uses
 # only the Python 3 standard library. Tested on Python 3.11 with numpy 1.26.
 numpy>=1.21
+libzim

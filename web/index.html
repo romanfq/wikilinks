@@ -11,20 +11,19 @@
 <!-- ───────────────────────────── SETUP ───────────────────────────── -->
 <section id="setup" class="screen">
   <div class="setup-box">
-    <div id="resumeBox" class="resume hidden">
-      <div id="resumeText"></div>
-      <div class="resume-actions">
-        <button id="resumeBtn" class="primary">Resume game</button>
-        <button id="discardBtn" class="ghost">Discard</button>
-      </div>
-    </div>
-
     <h1>WIKI<span>LINKS</span></h1>
-    <p class="tag">Get from one article to the other using only links. Shout <b>Linked!</b></p>
+    <p class="tag">Get from one article to the other using only links.</p>
 
     <div class="field">
-      <label>Players <small>up to 6</small></label>
-      <div id="players"></div>
+      <div class="gameQrCard">
+        <img id="gameQr" alt="Scan to join the game">
+      </div>
+      <div class="small" id="joinUrl"></div>
+    </div>
+
+    <div class="field">
+      <label>Players joined <small id="joinedCount">0</small></label>
+      <div id="joinedList" class="joined"></div>
     </div>
 
     <div class="row">
@@ -53,7 +52,7 @@
       </div>
     </div>
 
-    <button id="start" class="primary big">Start game</button>
+    <button id="start" class="primary big" disabled>Waiting for players…</button>
     <p class="hint" id="setupHint"></p>
   </div>
 </section>
@@ -97,37 +96,14 @@
   <footer id="controls">
     <!-- phase: ready (clock not started yet) -->
     <div class="phase hidden" id="phReady">
-      <div class="ready-head">Everyone open <b id="readyTitle">…</b> on your phones — the clock starts when you're all set.</div>
-      <div class="ready-url"><code id="readyUrl"></code></div>
+      <div class="ready-head">Everyone's phone is ready — press <b>Start round</b> when you are.</div>
       <button id="startRound" class="primary huge go">Start round</button>
     </div>
 
-    <!-- phase: running -->
+    <!-- phase: running — live board fed by /api/live, no manual "who got it" step -->
     <div class="phase" id="phRunning">
-      <button id="linked" class="primary huge">LINKED!</button>
+      <div id="liveBoard" class="liveBoard"></div>
       <button id="giveup" class="ghost">Nobody got it</button>
-    </div>
-
-    <!-- phase: who -->
-    <div class="phase hidden" id="phWho">
-      <span class="ask">Who got it?</span>
-      <div id="whoButtons" class="who"></div>
-      <button id="whoCancel" class="ghost">← resume clock</button>
-    </div>
-
-    <!-- phase: verify -->
-    <div class="phase hidden" id="phVerify">
-      <div class="verify-head">
-        <b id="claimant"></b> claimed it in <b id="claimTime"></b> — type the path to confirm
-      </div>
-      <textarea id="pathInput" rows="2" spellcheck="false"
-        placeholder="Battle of Vigo Bay, Spain, Madrid …   — comma separated, or one article per line if a title contains a comma. Start and finish optional."></textarea>
-      <div class="verify-actions">
-        <button id="doVerify" class="primary">Verify path</button>
-        <button id="skipVerify" class="ghost">Award without checking</button>
-        <button id="wrongPerson" class="ghost">Someone else</button>
-      </div>
-      <div id="verdict"></div>
     </div>
 
     <!-- phase: between rounds -->

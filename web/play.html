@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wikilinks — Join</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section id="join" class="screen">
+  <div class="setup-box">
+    <h1>WIKI<span>LINKS</span></h1>
+    <p class="tag">Type your name to join the game on the big screen.</p>
+    <div class="field">
+      <input id="nameInput" placeholder="Your name" maxlength="18" autofocus>
+    </div>
+    <button id="joinBtn" class="primary big">Join</button>
+    <p class="hint" id="joinHint"></p>
+  </div>
+</section>
+
+<section id="wait" class="screen hidden">
+  <div class="setup-box" style="text-align:center">
+    <h1>WIKI<span>LINKS</span></h1>
+    <p class="tag" id="waitText">You're in! Waiting for the host to start the round…</p>
+  </div>
+</section>
+
+<script src="play.js"></script>
+</body>
+</html>
